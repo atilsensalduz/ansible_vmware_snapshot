@@ -1,0 +1,97 @@
+---
+
+- hosts: snapshot
+  ignore_errors: yes
+  vars_files:
+      - vcenter_vars.yml
+
+  tasks:
+
+    - name: find_vm_info
+      find_vm_info:
+        vmname: "{{ ansible_hostname }}"
+      delegate_to: localhost
+      register: vm_info
+
+ 
+
+    - name: "Find folder for VM - {{ ansible_hostname|upper  }}"
+      vmware_guest_find:
+        hostname: "{{ vm_info.vm_vcenter }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
+        validate_certs: no
+        datacenter: "{{ vm_info.vm_datacenter|upper }}"
+        name: "{{ ansible_hostname|upper }}"
+      delegate_to: localhost
+      register: vm_facts
+
+    - name: "Check VM snapshot {{ ansible_hostname|upper }}"
+      vmware_guest_snapshot_facts:
+        hostname: "{{ vm_info.vm_vcenter }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
+        validate_certs: no
+        datacenter: "{{ vm_info.vm_datacenter|upper  }}"
+        name: "{{ ansible_hostname|upper }}"
+        folder: vm_facts.folder
+      delegate_to: localhost
+      register: snapshot_info
+      when: action_mode == "Check"
+
+    - debug:
+         msg: "{{ snapshot_info }}"
+      when: action_mode == "Check"
+
+    - name: "Delete All VM snapshot {{ ansible_hostname|upper }}"
+      vmware_guest_snapshot:
+        hostname: "{{ vm_info.vm_vcenter }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
+        validate_certs: no
+        folder: vm_facts.folder
+        name: "{{ ansible_hostname|upper }}"
+        datacenter: "{{ vm_info.vm_datacenter|upper }}"
+        state: remove_all
+      delegate_to: localhost
+      when: action_mode == "Delete" 
+
+    - name: Gather disk facts from virtual machine using name
+      vmware_guest_disk_facts:
+        hostname: "{{ vm_info.vm_vcenter }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
+        validate_certs: no
+        datacenter: "{{ vm_info.vm_datacenter|upper }}"
+        name: "{{ ansible_hostname|upper }}"
+      delegate_to: localhost
+      register: disk_facts
+      when: action_mode == "Take"
+
+    - name: disk facts writing
+      copy:
+        content: "{{ disk_facts | to_nice_json }}"
+        dest: /tmp/disk_fact.json
+      delegate_to: localhost
+      when: action_mode == "Take"
+
+    - name: find_size
+      find_size:
+      delegate_to: localhost
+      register: ansible_vm_disk
+      when: action_mode == "Take"
+
+    - name: Create snapshot
+      vmware_guest_snapshot:
+        hostname: "{{ vm_info.vm_vcenter }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
+        datacenter: "{{ vm_info.vm_datacenter|upper }}"
+        name: "{{ ansible_hostname|upper }}"
+        folder: vm_facts.folder
+        state: present
+        snapshot_name: "{{ ansible_date_time.date }}"
+        description: "{{ ansible_date_time.date }}"
+        validate_certs: no
+      delegate_to: localhost
+      when: action_mode == "Take" and ansible_vm_disk.size| int < 10240 
