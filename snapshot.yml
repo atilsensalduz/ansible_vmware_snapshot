@@ -10,6 +10,8 @@
     - name: find_vm_info
       find_vm_info:
         vmname: "{{ ansible_hostname }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
       delegate_to: localhost
       register: vm_info
 
